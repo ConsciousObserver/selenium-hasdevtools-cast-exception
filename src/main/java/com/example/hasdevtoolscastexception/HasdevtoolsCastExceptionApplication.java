@@ -48,15 +48,23 @@ public class HasdevtoolsCastExceptionApplication {
                                 log.warn(
                                         "**************** "
                                                 + "CURRENT THREAD'S CLASS LOADER IS DIFFRENT FROM PARENT."
-                                                + " Selenium driver Aumentation will fail if child thread's"
+                                                + " Selenium driver Augmentation will fail if child thread's"
                                                 + " contextClassLoader is not set to parent's");
                             }
 
+                            ClassLoader childThreadOriginalContextLoader = Thread.currentThread()
+                                    .getContextClassLoader();
                             // This line must be uncommented for selenium driver augmentation to work in Spring Boot's runnable JAR. 
                             // Otherwise we get class cast exception with HasDevTools when not running on main thread.
                             Thread.currentThread().setContextClassLoader(parentThreadContextClassLoader);
+                            try {
+                                testDevTools(seleniumContainerSetup.getBrowserWebDriverContainer());
+                            } finally {
+                                //Switch back before surrendering to thread pool
+                                Thread.currentThread().setContextClassLoader(childThreadOriginalContextLoader);
+                            }
 
-                            return testDevTools(seleniumContainerSetup.getBrowserWebDriverContainer());
+                            return "done";
                         })
                         .get();
             }
@@ -76,7 +84,7 @@ public class HasdevtoolsCastExceptionApplication {
      * @param browserWebDriverContainer
      * @return
      */
-    String testDevTools(BrowserWebDriverContainer<?> browserWebDriverContainer) {
+    void testDevTools(BrowserWebDriverContainer<?> browserWebDriverContainer) {
         RemoteWebDriver webDriver = null;
 
         try {
@@ -108,8 +116,6 @@ public class HasdevtoolsCastExceptionApplication {
                 webDriver.quit();
             }
         }
-
-        return "done";
     }
 }
 
