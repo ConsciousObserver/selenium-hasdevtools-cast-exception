@@ -1,6 +1,9 @@
 package com.example.hasdevtoolscastexception;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -17,10 +20,12 @@ import org.testcontainers.containers.BrowserWebDriverContainer;
 import org.testcontainers.containers.SocatContainer;
 
 import lombok.Data;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @SpringBootApplication
+@RequiredArgsConstructor
 public class HasdevtoolsCastExceptionApplication {
 
     public static void main(String[] args) {
@@ -30,63 +35,109 @@ public class HasdevtoolsCastExceptionApplication {
     @Bean
     CommandLineRunner commandLineRunner() {
         return args -> {
-            SeleniumContainerSetup seleniumContainerSetup = null;
-            try {
-                seleniumContainerSetup = new SeleniumContainerSetup();
+            try (SeleniumContainerSetup seleniumContainerSetup = new SeleniumContainerSetup();) {
+                ClassLoader parentThreadContextClassLoader = Thread.currentThread().getContextClassLoader();
 
-                testDevTools(seleniumContainerSetup.getBrowserWebDriverContainer());
-            } finally {
-                if (seleniumContainerSetup != null) {
-                    seleniumContainerSetup.stopContainers();
-                }
+                CompletableFuture
+                        .supplyAsync(() -> {
+                            log.info("ContexClassLoader:::: Parent: {}, Child: {}", parentThreadContextClassLoader,
+                                    Thread.currentThread().getContextClassLoader());
+
+                            // Thread.currentThread().setContextClassLoader(parentThreadContextClassLoader);
+
+                            return testDevTools(seleniumContainerSetup.getBrowserWebDriverContainer());
+                        })
+                        .get();
             }
+
+            log.info("Shutting down");
+
+            System.exit(0);
         };
     }
 
-    void testDevTools(BrowserWebDriverContainer<?> browserWebDriverContainer) {
+    /**
+     * Connects to Chromium browser in test container with RemoteWebDriver and
+     * uses DevTools to print few network requests. However, casting to
+     * HasDevTools fails in runnable JAR when this method is run on a new
+     * thread.
+     * 
+     * @param browserWebDriverContainer
+     * @return
+     */
+    String testDevTools(BrowserWebDriverContainer<?> browserWebDriverContainer) {
         RemoteWebDriver webDriver = null;
 
         try {
-            ChromeOptions capabilities = new ChromeOptions().addArguments("--headless");
-            webDriver = new RemoteWebDriver(browserWebDriverContainer.getSeleniumAddress(), capabilities);
-            //            webDriver.getCapabilities().getCapability("se:cdp");
+            webDriver = new RemoteWebDriver(browserWebDriverContainer.getSeleniumAddress(), new ChromeOptions());
+
             WebDriver augmentedWebDriver = new Augmenter().augment(webDriver);
+
+            // Fails to cast when run with in runnable JAR
             DevTools devTools = ((HasDevTools) augmentedWebDriver).getDevTools();
             devTools.createSession();
 
             devTools.send(Network.enable(Optional.of(1000000), Optional.empty(), Optional.empty()));
 
             devTools.addListener(Network.responseReceived(), responseReceived -> {
-                log.info("status: {}, Url: {}", responseReceived.getResponse().getStatus(),
-                        responseReceived.getResponse().getUrl());
+
+                String url = responseReceived.getResponse().getUrl();
+
+                if (url.endsWith(".js")) {
+                    log.info("status: {}, Url: {}", responseReceived.getResponse().getStatus(),
+                            url);
+                }
             });
 
-            System.out.println("VNC address : " + browserWebDriverContainer.getVncAddress());
             webDriver.get("https://stackoverflow.com");
 
-            System.out.println(webDriver.getTitle());
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            throw ex;
+            log.info("Title: {}", webDriver.getTitle());
         } finally {
             if (webDriver != null) {
                 webDriver.quit();
             }
         }
+
+        return "done";
     }
 }
 
+/**
+ * Uses TestContainers for selenium to get RemoteWebDriver. It needs local
+ * running Docker.
+ *
+ */
 @Slf4j
 @Data
-class SeleniumContainerSetup {
+class SeleniumContainerSetup implements Closeable {
+    /**
+     * Since it's not possible to get the selenium container's port mapped on
+     * Docker host, we use this TCP proxy to do that. Now our selenium driver
+     * traffic goes through the proxy. Socat proxy container allows us to access
+     * host exposed port.
+     * 
+     * <p>
+     * See below answer on Github issues
+     * <p>
+     * <a href
+     * ="https://github.com/testcontainers/testcontainers-java/issues/7242#issuecomment-1644155873">https://github.com/testcontainers/testcontainers-java/issues/7242#issuecomment-1644155873</a>
+     */
     private SocatContainer tcpProxySocatContainer;
 
+    /**
+     * Container where Chrome browser is running. We use RemoteWebDriver to
+     * connect to it. It also starts a vnc-recorder container, which can be used
+     * to record videos of selenium sessions.
+     */
     private BrowserWebDriverContainer<?> browserWebDriverContainer;
 
     public SeleniumContainerSetup() {
         startContainers();
     }
 
+    /**
+     * Starts TCP proxy and selenium container
+     */
     private void startContainers() {
         log.info("**************** Test setup start");
 
@@ -126,5 +177,13 @@ class SeleniumContainerSetup {
         if (browserWebDriverContainer != null) {
             browserWebDriverContainer.stop();
         }
+    }
+
+    /**
+     * Implemented to use with try-with-resources.
+     */
+    @Override
+    public void close() throws IOException {
+        stopContainers();
     }
 }
