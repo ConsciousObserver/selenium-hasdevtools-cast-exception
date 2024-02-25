@@ -40,8 +40,16 @@ public class HasdevtoolsCastExceptionApplication {
 
                 CompletableFuture
                         .supplyAsync(() -> {
-                            log.info("ContexClassLoader:::: Parent: {}, Child: {}", parentThreadContextClassLoader,
+                            log.info("**************** ContexClassLoader:::: Parent: {}, Child: {}",
+                                    parentThreadContextClassLoader,
                                     Thread.currentThread().getContextClassLoader());
+
+                            if (parentThreadContextClassLoader != Thread.currentThread().getContextClassLoader()) {
+                                log.warn(
+                                        "**************** "
+                                                + "CURRENT THREAD'S CLASS LOADER IS DIFFRENT FROM PARENT. Selenium driver Aumentation will fail. "
+                                                + "Reassign parent thread's contextClassLoader to child");
+                            }
 
                             // Thread.currentThread().setContextClassLoader(parentThreadContextClassLoader);
 

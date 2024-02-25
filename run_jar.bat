@@ -1,0 +1,1 @@
+mvn package -DskipTests && java -jar target\selenium-hasdevtools-cast-exception-0.0.1-SNAPSHOT.jar
