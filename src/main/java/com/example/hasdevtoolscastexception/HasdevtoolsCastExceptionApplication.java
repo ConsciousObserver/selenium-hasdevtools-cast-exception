@@ -47,11 +47,14 @@ public class HasdevtoolsCastExceptionApplication {
                             if (parentThreadContextClassLoader != Thread.currentThread().getContextClassLoader()) {
                                 log.warn(
                                         "**************** "
-                                                + "CURRENT THREAD'S CLASS LOADER IS DIFFRENT FROM PARENT. Selenium driver Aumentation will fail. "
-                                                + "Reassign parent thread's contextClassLoader to child");
+                                                + "CURRENT THREAD'S CLASS LOADER IS DIFFRENT FROM PARENT."
+                                                + " Selenium driver Aumentation will fail if child thread's"
+                                                + " contextClassLoader is not set to parent's");
                             }
 
-                            // Thread.currentThread().setContextClassLoader(parentThreadContextClassLoader);
+                            // This line must be uncommented for selenium driver augmentation to work in Spring Boot's runnable JAR. 
+                            // Otherwise we get class cast exception with HasDevTools when not running on main thread.
+                            Thread.currentThread().setContextClassLoader(parentThreadContextClassLoader);
 
                             return testDevTools(seleniumContainerSetup.getBrowserWebDriverContainer());
                         })
