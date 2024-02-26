@@ -20,12 +20,10 @@ import org.testcontainers.containers.BrowserWebDriverContainer;
 import org.testcontainers.containers.SocatContainer;
 
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @SpringBootApplication
-@RequiredArgsConstructor
 public class HasdevtoolsCastExceptionApplication {
 
     public static void main(String[] args) {
